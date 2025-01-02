@@ -6,12 +6,15 @@ const App = () => {
     const mediaStreamRef = useRef<MediaStream | null>(null);
 
     const [socket, setSocket] = useState<WebSocket | null>(null);
-    const [inputID, setInputID] = useState<number |null>(null);
+    const [inputID, setInputID] = useState<number>(0);
     let pc : RTCPeerConnection | null;
+
     useEffect(()=>{
         const socket = new WebSocket(import.meta.env.VITE_WS_URL);
         setSocket(socket)
-  
+        return ()=>{
+            socket.close();
+        }
     },[])
 
     function waitForReceiverReady(socket: WebSocket, meetingID: number, secsToWait: number) {
@@ -25,20 +28,15 @@ const App = () => {
                 const message = JSON.parse(event.data);
                 if (message.type === "receiverReady" && message.ID === meetingID) {
                     clearTimeout(timeout);
-                    console.log("Receiver is ready");
                     resolve(true);
                 }
             };
         });
     }
 
-    function generateRandom4DigitNumber() {
-        return Math.floor(Math.random() * 9000) + 1000;
-    }
-
     async function createMeeting(){
-        if (!socket) {console.log("no ws connection"); return; }
-        const meetingID = generateRandom4DigitNumber();
+        if (!socket) return;
+        const meetingID = Math.floor(Math.random() * 9000) + 1000; //generates random 4 digit number
         console.log(`MeetingID = ${meetingID}`);
         socket.send(JSON.stringify({type: "sender", ID: meetingID})); 
         pc = new RTCPeerConnection();
@@ -50,32 +48,12 @@ const App = () => {
             return;
         }
 
-        pc.ontrack = (event)=>{
-            console.log(event.track)
-
-            if (!mediaStreamRef.current) {
-                mediaStreamRef.current = new MediaStream();
-                if (videoRef.current) {
-                    videoRef.current.srcObject = mediaStreamRef.current;
-                }
-            }
-
-            mediaStreamRef.current.addTrack(event.track);
-        }
-
         pc.onnegotiationneeded = async ()=>{
             if (!pc) pc = new RTCPeerConnection();
-            console.log("Sender: creating offer");
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);
-
-            console.log("Sender: offer created");
             socket.send(JSON.stringify({type: "createOffer", ID: meetingID ,sdp: pc.localDescription}))
             console.log("Sender: offer sent")
-        }
-
-        pc.onicecandidate = (event)=>{
-            socket.send(JSON.stringify({type: "iceCandidate", ID: meetingID , candidate: event.candidate}))
         }
 
         socket.onmessage = async (event)=>{
@@ -83,22 +61,15 @@ const App = () => {
             const message = JSON.parse(event.data);
             if (message.type==="createAnswer"){
                 console.log("Sender: answer received")
-                console.log(message)
                 await pc.setRemoteDescription(message.sdp);
             } else if (message.type === "iceCandidate"){
                 await pc.addIceCandidate(message.candidate);
                 console.log("iceCandidate received")
             }
         }
-
-        const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: false})
-        if (ownVideoRef.current) {
-            const videoOnlyStream = new MediaStream([stream.getVideoTracks()[0]]);
-            ownVideoRef.current.srcObject = videoOnlyStream;
-        }
-        if (pc) {
-            stream.getTracks().forEach((track)=> pc.addTrack(track, stream));
-        }
+        addIceCandidates(socket, pc, meetingID);
+        receiveTrack(pc);
+        addTrack(pc);
     }
 
     async function joinMeeting(){
@@ -107,19 +78,6 @@ const App = () => {
 
         const meetingID = inputID;
         socket.send(JSON.stringify({type: "receiver", ID: meetingID}))
-
-        pc.ontrack = (event)=>{
-            console.log(event.track)
-
-            if (!mediaStreamRef.current) {
-                mediaStreamRef.current = new MediaStream();
-                if (videoRef.current) {
-                    videoRef.current.srcObject = mediaStreamRef.current;
-                }
-            }
-
-            mediaStreamRef.current.addTrack(event.track);
-        }
 
         socket.onmessage = async (event) => {
             if (!pc)  pc = new RTCPeerConnection(); 
@@ -136,19 +94,39 @@ const App = () => {
             }
         }
 
-        pc.onicecandidate = (event) => {
+        addIceCandidates(socket, pc, meetingID);
+        receiveTrack(pc);
+        addTrack(pc);
+    }
+
+    function receiveTrack(pc: RTCPeerConnection){
+        pc.ontrack = (event)=>{
+            if (!mediaStreamRef.current) {
+                mediaStreamRef.current = new MediaStream();
+                if (videoRef.current) {
+                    videoRef.current.srcObject = mediaStreamRef.current;
+                }
+            }
+            mediaStreamRef.current.addTrack(event.track);
+        }
+    }
+
+    function addIceCandidates(WSConnection: WebSocket, peerConnection: RTCPeerConnection, meetingID: number){
+        peerConnection.onicecandidate = (event) => {
             if (event.candidate) {
-                socket?.send(JSON.stringify({ type: 'iceCandidate', ID: meetingID , candidate: event.candidate }));
+                WSConnection?.send(JSON.stringify({ type: 'iceCandidate', ID: meetingID , candidate: event.candidate }));
             }
         };
+    }
 
+    async function addTrack(peerConnection: RTCPeerConnection){
         const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: false})
         if (ownVideoRef.current) {
             const videoOnlyStream = new MediaStream([stream.getVideoTracks()[0]]);
             ownVideoRef.current.srcObject = videoOnlyStream;
         }
-        if (pc) {
-            stream.getTracks().forEach((track)=> pc.addTrack(track, stream));
+        if (peerConnection) {
+            stream.getTracks().forEach((track)=> peerConnection.addTrack(track, stream));
         }
     }
 
