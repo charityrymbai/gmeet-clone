@@ -8,38 +8,64 @@ const server = https.createServer({
   key: fs.readFileSync(path.join(__dirname, "../../private-key.pem")), 
 });
 
+const connections = new Map<number, {sender: WebSocket | null, receiver: WebSocket | null }>();
+
 const wss = new WebSocketServer({ server });
 
-let senderSocket: null | WebSocket = null;
-let receiverSocket: null | WebSocket = null;
-
-wss.on("connection", function connection(ws: WebSocket) {
+wss.on("connection", function (ws: WebSocket) {
   ws.on("error", console.error);
 
   ws.on("message", function message(data: any) {
     const message = JSON.parse(data);
     if (message.type === "sender") {
-      senderSocket = ws;
-      console.log("Sender set");
+          const meetingID = message.ID;
+          if (meetingID===undefined){
+              console.log("error, meetingID = " + meetingID)
+              return;
+          }
+          connections.set(meetingID, {sender: ws, receiver: null});
+          console.log("sender set, meetingID = " + meetingID)
     } else if (message.type === "receiver") {
-      receiverSocket = ws;
-      console.log("Receiver set");
+          if (connections.has(message.ID)){
+              const connection = connections.get(message.ID);
+              if (connection) {
+                connection.receiver = ws;
+                connections.set(message.ID, connection);
+                connection.sender?.send(JSON.stringify({type: "receiverReady", ID: message.ID}))
+                console.log("receiver set")
+              } else {
+                console.error(`No connection found for meetingID: ${message.ID}`);
+              }
+          }
     } else if (message.type === "createOffer") {
-      receiverSocket?.send(JSON.stringify({ type: "createOffer", sdp: message.sdp }));
-      console.log("Offer sent");
+          const connection = connections.get(message.ID);
+          if (!connection) return;
+          if(ws){
+              console.log("Server: sending offer to receiver")
+              connection.receiver?.send(JSON.stringify({ type: "createOffer",  ID: message.ID, sdp: message.sdp }));
+              console.log("Server: Offer sent to receiver");
+          }
     } else if (message.type === "createAnswer") {
-      senderSocket?.send(JSON.stringify({ type: "createAnswer", sdp: message.sdp }));
-      console.log("Answer sent");
+          const connection = connections.get(message.ID);
+          if (!connection) return;
+          if (ws){
+              console.log("Server: sending answer to sender")
+              connection.sender?.send(JSON.stringify({ type: "createAnswer",  ID: message.ID, sdp: message.sdp }));
+              console.log("Server: Answer sent to sender");
+          }
     } else if (message.type === "iceCandidate") {
-      if (senderSocket === ws) {
-        receiverSocket?.send(JSON.stringify({ type: "iceCandidate", candidate: message.candidate }));
-        console.log("Ice candidate sent");
+          const connection = connections.get(message.ID);  
+        if (connection){
+            if (connection.sender === ws) {
+              connection.receiver?.send(JSON.stringify({ type: "iceCandidate", ID: message.ID, candidate: message.candidate }));
+              console.log("sender to receiver: Ice candidate sent");
       } else {
-        senderSocket?.send(JSON.stringify({ type: "iceCandidate", candidate: message.candidate }));
-        console.log("Ice candidate sent");
+              connection.sender?.send(JSON.stringify({ type: "iceCandidate", ID: message.ID, candidate: message.candidate }));
+              console.log("receiver to sender: Ice candidate sent");
+            }
       }
     }
   });
 });
 
-server.listen(8080);
+server.listen(8080, ()=> console.log("server running...."));
