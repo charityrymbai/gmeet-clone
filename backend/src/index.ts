@@ -32,7 +32,7 @@ wss.on("connection", function (ws: WebSocket) {
                 connection.receiver = ws;
                 connections.set(message.ID, connection);
                 connection.sender?.send(JSON.stringify({type: "receiverReady", ID: message.ID}))
-                console.log("receiver set")
+                console.log(`receiver set, meetingID = ${message.ID}`)
               } else {
                 console.error(`No connection found for meetingID: ${message.ID}`);
               }

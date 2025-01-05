@@ -27,7 +27,7 @@ export function receiveTrack(pc: RTCPeerConnection, mediaStreamRef : React.Mutab
     }
 }
 
-export function addIceCandidates(WSConnection: WebSocket, peerConnection: RTCPeerConnection, meetingID: number){
+export function addIceCandidates(peerConnection: RTCPeerConnection, meetingID: number, WSConnection: WebSocket | null){
     peerConnection.onicecandidate = (event) => {
         if (event.candidate) {
             WSConnection?.send(JSON.stringify({ type: 'iceCandidate', ID: meetingID , candidate: event.candidate }));
@@ -36,13 +36,14 @@ export function addIceCandidates(WSConnection: WebSocket, peerConnection: RTCPee
 }
 
 export async function addTrack(peerConnection: RTCPeerConnection){
-    const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: true})
+    const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: false})
     if (peerConnection) {
-        stream.getTracks().forEach((track)=> peerConnection.addTrack(track, stream));
+        stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
     }
 }
 
-export async function addOwnVideo(ownVideoRef:React.RefObject<HTMLVideoElement>){
+
+export async function addOwnVideo(ownVideoRef: React.RefObject<HTMLVideoElement>){
     const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: false})
     if (ownVideoRef.current) {
         const videoOnlyStream = new MediaStream([stream.getVideoTracks()[0]]);
