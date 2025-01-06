@@ -99,6 +99,8 @@ const CallPage = () => {
             } else if (message.type === "iceCandidate"){
                 await pc.addIceCandidate(message.candidate);
                 console.log("iceCandidate received")
+            } else if (message.type === "endCall"){
+                stopVideoReturnToHome();
             }
         }
         addIceCandidates(pc, meetingID, socket);
@@ -131,6 +133,8 @@ const CallPage = () => {
                 pc.addIceCandidate(message.candidate);
             } else if (message.type === "error", message.desp==="meetingID not found"){
                 return <ErrorMessage />
+            } else if (message.type === "endCall") {
+                stopVideoReturnToHome();
             }
         }
 
@@ -144,7 +148,7 @@ const CallPage = () => {
         addOwnVideo(ownVideoRef);
     }
 
-    function endCall(){
+    function stopVideoReturnToHome(){
         pc?.close();
         if (mediaStreamRef.current) {
             mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -155,9 +159,14 @@ const CallPage = () => {
         if (ownVideoRef.current) {
             ownVideoRef.current.srcObject = null;
         }
-        socket?.send(JSON.stringify({type: "endCall"}));
         navigate("/");
         window.location.reload();
+    }
+
+    function endCall(){
+        socket?.send(JSON.stringify({type: "endCall", ID: meetingID}));
+        stopVideoReturnToHome();
+        
     }
     return (
         <div>

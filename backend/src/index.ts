@@ -64,6 +64,17 @@ wss.on("connection", function (ws: WebSocket) {
               console.log("receiver to sender: Ice candidate sent");
             }
       }
+    } else if (message.type === "endCall") {
+      const connection = connections.get(message.ID);  
+        if (connection){
+            if (connection.sender === ws) {
+              connection.receiver?.send(JSON.stringify({ type: "endCall", ID: message.ID }));
+              console.log("sender to receiver: endCall sent");
+      } else {
+              connection.sender?.send(JSON.stringify({ type: "endCall", ID: message.ID }));
+              console.log("receiver to sender: endCall sent");
+            }
+      }
     }
   });
 });
