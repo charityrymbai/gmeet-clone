@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { addIceCandidates, addOwnVideo, addTrack, receiveTrack } from "../utils/webRTCUtils";
 import { useWebSocket } from "../utils/WebsocketContext";
@@ -17,21 +17,67 @@ const CallPage = () => {
     const params = useParams();
     const meetingIDStr = params.meetingIDStr;
 
+    const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (selectedDeviceId) {
+            const updateTrack = async () => {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { deviceId: { exact: selectedDeviceId } }
+                });
+                console.log(stream);
+                const videoTrack = stream.getVideoTracks()[0];
+
+                if (pc) {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) {
+                        sender.replaceTrack(videoTrack);
+                    } else {
+                        pc.addTrack(videoTrack, stream);
+                    }
+                }
+
+                if (ownVideoRef.current) {
+                    ownVideoRef.current.srcObject = stream;
+                }
+            };
+            updateTrack();
+        }
+    }, [selectedDeviceId]);
+
+    useEffect(() => {
+        async function getVideoDevices() {
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            const videoInputDevices = devices.filter(device => device.kind === 'videoinput');
+            setVideoDevices(videoInputDevices);
+            if (videoInputDevices.length > 0) {
+                setSelectedDeviceId(videoInputDevices[0].deviceId);
+            }
+        }
+        getVideoDevices();
+    }, []);
+
     const { state } = location;
     const socket = useWebSocket();
     const mode = state?.mode;
 
+    useEffect(()=>{
+        if (!socket) {
+            return;
+        }
+        if (mode === "create") {
+            createMeeting(socket);
+        } else if (mode === "join") {
+            joinMeeting(socket);
+        } else if (mode === undefined) {
+            return;
+        }
+    },[socket])
+
     if(!socket || !meetingIDStr) return <ErrorMessage />
 
     const meetingID:number = parseInt(meetingIDStr);
-
-    if (mode ==="create"){
-        createMeeting(socket);
-    } else if(mode === "join"){
-        joinMeeting(socket);
-    } else if (mode === undefined){
-        return <ErrorMessage />
-    }
 
     function createMeeting(socket:WebSocket){
         pc = new RTCPeerConnection();
@@ -57,7 +103,11 @@ const CallPage = () => {
         }
         addIceCandidates(pc, meetingID, socket);
         receiveTrack(pc, mediaStreamRef, videoRef);
-        addTrack(pc);
+        if (selectedDeviceId) {
+            addTrack(pc, selectedDeviceId);
+        } else {
+            addTrack(pc, "facing front");
+        }
         addOwnVideo(ownVideoRef);
     }
 
@@ -86,7 +136,11 @@ const CallPage = () => {
 
         addIceCandidates(pc, meetingID, socket);
         receiveTrack(pc, mediaStreamRef, videoRef);
-        addTrack(pc);
+        if (selectedDeviceId) {
+            addTrack(pc, selectedDeviceId);
+        } else {
+            addTrack(pc, "facing front");
+        }
         addOwnVideo(ownVideoRef);
     }
 
@@ -101,11 +155,26 @@ const CallPage = () => {
         if (ownVideoRef.current) {
             ownVideoRef.current.srcObject = null;
         }
+        socket?.send(JSON.stringify({type: "endCall"}));
         navigate("/");
         window.location.reload();
     }
     return (
         <div>
+            <div>
+                <label htmlFor="cameraSelect">Select Camera: </label>
+                <select
+                    id="cameraSelect"
+                    value={selectedDeviceId || ''}
+                    onChange={(e) => setSelectedDeviceId(e.target.value)}
+                >
+                    {videoDevices.map(device => (
+                        <option key={device.deviceId} value={device.deviceId}>
+                            {device.label || `Camera ${device.deviceId}`}
+                        </option>
+                    ))}
+                </select>
+            </div>
             <div className="h-screen w-screen flex justify-center items-start md:items-center bg-black">
                 <video 
                     className="rounded-xl h-[90%]" 

@@ -35,8 +35,11 @@ export function addIceCandidates(peerConnection: RTCPeerConnection, meetingID: n
     };
 }
 
-export async function addTrack(peerConnection: RTCPeerConnection){
-    const stream = await navigator.mediaDevices.getUserMedia({video: true, audio: false})
+export async function addTrack(peerConnection: RTCPeerConnection, deviceId: string) {
+    const stream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: deviceId } },
+        audio: false
+    });
     if (peerConnection) {
         stream.getTracks().forEach((track) => peerConnection.addTrack(track, stream));
     }
